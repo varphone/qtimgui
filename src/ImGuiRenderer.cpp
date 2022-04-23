@@ -45,7 +45,6 @@ const QHash<int, ImGuiKey> keyMap = {
     { Qt::Key_X, ImGuiKey_X },
     { Qt::Key_Y, ImGuiKey_Y },
     { Qt::Key_Z, ImGuiKey_Z },
-    { Qt::MiddleButton, ImGuiMouseButton_Middle }
 };
 
 #ifndef QT_NO_CURSOR
@@ -83,7 +82,7 @@ void ImGuiRenderer::initialize(WindowWrapper *window) {
     
     // Setup keyboard mapping
     for (ImGuiKey key : keyMap.values()) {
-        io.KeyMap[key] = key;
+        io.AddKeyEvent(key, false);
     }
     
     // io.RenderDrawListsFn = [](ImDrawData *drawData) {
@@ -342,27 +341,15 @@ void ImGuiRenderer::newFrame()
     if (m_window->isActive())
     {
         const QPoint pos = m_window->mapFromGlobal(QCursor::pos());
-        io.MousePos = ImVec2(pos.x(), pos.y());   // Mouse position in screen coordinates (set to -1,-1 if no mouse / on another screen, etc.)
+        io.AddMousePosEvent(pos.x(), pos.y());   // Mouse position in screen coordinates (set to -1,-1 if no mouse / on another screen, etc.)
     }
     else
     {
-        io.MousePos = ImVec2(-1,-1);
+        io.AddMousePosEvent(-1, -1);
     }
-
-    for (int i = 0; i < 3; i++)
-    {
-        io.MouseDown[i] = g_MousePressed[i];
-    }
-
-    io.MouseWheelH = g_MouseWheelH;
-    io.MouseWheel = g_MouseWheel;
-    g_MouseWheelH = 0;
-    g_MouseWheel = 0;
-
     
     updateCursorShape(io);
     
-
     // Start the frame
     ImGui::NewFrame();
 }
@@ -389,9 +376,14 @@ ImGuiRenderer::~ImGuiRenderer()
 
 void ImGuiRenderer::onMousePressedChange(QMouseEvent *event)
 {
-    g_MousePressed[0] = event->buttons() & Qt::LeftButton;
-    g_MousePressed[1] = event->buttons() & Qt::RightButton;
-    g_MousePressed[2] = event->buttons() & Qt::MiddleButton;
+    // Select current context
+    ImGui::SetCurrentContext(g_ctx);
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, event->buttons() & Qt::LeftButton);
+    io.AddMouseButtonEvent(ImGuiMouseButton_Right, event->buttons() & Qt::RightButton);
+    io.AddMouseButtonEvent(ImGuiMouseButton_Middle, event->buttons() & Qt::MiddleButton);
 }
 
 void ImGuiRenderer::onWheel(QWheelEvent *event)
@@ -399,24 +391,31 @@ void ImGuiRenderer::onWheel(QWheelEvent *event)
     // Select current context
     ImGui::SetCurrentContext(g_ctx);
 
+    ImGuiIO& io = ImGui::GetIO();
+
+    float wx = 0;
+    float wy = 0;
+
     // Handle horizontal component
     if(event->pixelDelta().x() != 0)
     {
-        g_MouseWheelH += event->pixelDelta().x() / (ImGui::GetTextLineHeight());
+        wx = event->pixelDelta().x() / (ImGui::GetTextLineHeight());
     } else {
         // Magic number of 120 comes from Qt doc on QWheelEvent::pixelDelta()
-        g_MouseWheelH += event->angleDelta().x() / 120.0f;
+        wx = event->angleDelta().x() / 120.0f;
     }
 
     // Handle vertical component
     if(event->pixelDelta().y() != 0)
     {
         // 5 lines per unit
-        g_MouseWheel += event->pixelDelta().y() / (5.0 * ImGui::GetTextLineHeight());
+        wy = event->pixelDelta().y() / (5.0 * ImGui::GetTextLineHeight());
     } else {
         // Magic number of 120 comes from Qt doc on QWheelEvent::pixelDelta()
-        g_MouseWheel += event->angleDelta().y() / 120.0f;
+        wy = event->angleDelta().y() / 120.0f;
     }
+
+    io.AddMouseWheelEvent(wx, wy);
 }
 
 void ImGuiRenderer::onKeyPressRelease(QKeyEvent *event)
@@ -432,7 +431,7 @@ void ImGuiRenderer::onKeyPressRelease(QKeyEvent *event)
     const auto key_it = keyMap.constFind( event->key() );
     if (key_it != keyMap.constEnd()) { // Qt's key found in keyMap
         const int imgui_key = *(key_it);
-        io.KeysDown[imgui_key] = key_pressed;
+        io.AddKeyEvent(imgui_key, key_pressed);
     }
 
     if (key_pressed) {
@@ -443,15 +442,15 @@ void ImGuiRenderer::onKeyPressRelease(QKeyEvent *event)
     }
 
 #ifdef Q_OS_MAC
-    io.KeyCtrl  = event->modifiers() & Qt::MetaModifier;
-    io.KeyShift = event->modifiers() & Qt::ShiftModifier;
-    io.KeyAlt   = event->modifiers() & Qt::AltModifier;
-    io.KeySuper = event->modifiers() & Qt::ControlModifier; // Comamnd key
+    io.AddKeyEvent(ImGuiKey_ModCtrl, event->modifiers() & Qt::MetaModifier);
+    io.AddKeyEvent(ImGuiKey_ModShift, event->modifiers() & Qt::ShiftModifier);
+    io.AddKeyEvent(ImGuiKey_ModAlt, event->modifiers() & Qt::AltModifier);
+    io.AddKeyEvent(ImGuiKey_ModSuper, event->modifiers() & Qt::ControlModifier);
 #else
-    io.KeyCtrl  = event->modifiers() & Qt::ControlModifier;
-    io.KeyShift = event->modifiers() & Qt::ShiftModifier;
-    io.KeyAlt   = event->modifiers() & Qt::AltModifier;
-    io.KeySuper = event->modifiers() & Qt::MetaModifier;
+    io.AddKeyEvent(ImGuiKey_ModCtrl, event->modifiers() & Qt::ControlModifier);
+    io.AddKeyEvent(ImGuiKey_ModShift, event->modifiers() & Qt::ShiftModifier);
+    io.AddKeyEvent(ImGuiKey_ModAlt, event->modifiers() & Qt::AltModifier);
+    io.AddKeyEvent(ImGuiKey_ModSuper, event->modifiers() & Qt::MetaModifier);
 #endif
 }
 
